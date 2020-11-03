@@ -6,7 +6,6 @@ import (
 	"github.com/tatskaari/cowfs/fs"
 	"os"
 	"os/signal"
-	"sync"
 	"syscall"
 )
 
@@ -33,7 +32,8 @@ var opts = struct {
 func main() {
 	command := cli.ParseFlagsOrDie("cowfs", &opts)
 	if command == "mount" {
-		mountAndServe()
+		go handleSignals()
+		fs.MountAndServe(opts.Mount.Args.MountPoint, opts.Mount.Args.Files)
 	} else {
 		if err := fs.Unmount(opts.Mount.Args.MountPoint); err != nil {
 			fmt.Println("Failed to unmount fs ", err)
@@ -41,15 +41,7 @@ func main() {
 	}
 }
 
-func mountAndServe(){
-	wg := new(sync.WaitGroup)
-
-	wg.Add(1)
-	go func() {
-		fs.MountAndServe(opts.Mount.Args.MountPoint, opts.Mount.Args.Files)
-		wg.Done()
-	}()
-
+func handleSignals() {
 	ch := make(chan os.Signal)
 	signal.Notify(ch, syscall.SIGHUP, syscall.SIGINT, syscall.SIGQUIT, syscall.SIGABRT, syscall.SIGTERM)
 	sig := <-ch
@@ -58,5 +50,4 @@ func mountAndServe(){
 	if err := fs.Unmount(opts.Mount.Args.MountPoint); err != nil {
 		fmt.Println("Failed to unmount fs ", err)
 	}
-	wg.Wait()
 }
