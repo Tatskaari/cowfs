@@ -24,7 +24,7 @@ func fileAttr(loc Locatable, a *fuse.Attr) error {
 	return nil
 }
 
-// RealFile implements both Node and Handle for a file that actually exists in our file tree
+// File implements both Node and Handle for a file that actually exists in our file tree
 type File struct{
 	mooFS *FS
 
@@ -33,7 +33,15 @@ type File struct{
 	writeable bool
 	attr *fuse.Attr
 
-	openFile *os.File
+}
+
+type FileHandle struct {
+	*os.File
+
+	file *File
+	wasWriteable bool
+
+	mode int
 }
 
 func (mooFS *FS) newFile(parent *Dir, name string, mode os.FileMode) *File {
@@ -66,69 +74,86 @@ func (f *File) Attr(ctx context.Context, a *fuse.Attr) error {
 	return fileAttr(f, a)
 }
 
-func (f *File) Read(ctx context.Context, req *fuse.ReadRequest, resp *fuse.ReadResponse) error {
-	// TODO this should be on a file handle and the client should've already opened the file by this point
-	osFile, err := os.Open(f.Loc())
-	if err != nil {
-		return err
+// prepareForWrite will copy the file to the tmp directory if the file is not currently writeable
+func (f *File) prepareForWrite() error {
+	// If we're not writable, copy the file to the tmp fs
+	if !f.writeable {
+		writeFile, err := os.Create(f.Loc())
+		if err != nil {
+			return err
+		}
+		defer writeFile.Close()
+
+		origFile, err := os.Open(f.fromPath)
+		if err != nil {
+			return err
+		}
+		defer origFile.Close()
+
+		if _, err := io.Copy(origFile, writeFile); err != nil {
+			return err
+		}
+		f.writeable = true
+	}
+	return nil
+}
+
+func (f *File) Fsync(ctx context.Context, req *fuse.FsyncRequest) error {
+	// TODO: I think we should be able to ignore this however it might be best to keep track of all file handles
+	// and get them to flush here.
+	return nil
+}
+
+func (f *File) Open(ctx context.Context, req *fuse.OpenRequest, resp *fuse.OpenResponse) (fs.Handle, error) {
+	var osFile *os.File
+	var err error
+
+	if req.Flags.IsReadWrite() || req.Flags.IsWriteOnly() {
+		if err := f.prepareForWrite(); err != nil {
+			return nil, err
+		}
+		osFile, err = os.OpenFile(f.Loc(), os.O_RDWR, 0)
+	} else {
+		osFile, err = os.Open(f.Loc())
 	}
 
+	return &FileHandle{
+		File: osFile,
+		file: f,
+		wasWriteable: f.writeable,
+	}, err
+}
+
+func (f *FileHandle) Read(ctx context.Context, req *fuse.ReadRequest, resp *fuse.ReadResponse) error {
+	// If the file has become writable since we opened it, open the new file
+	if !f.wasWriteable && f.file.writeable {
+		f.Close()
+		newFile, err := os.OpenFile(f.file.Loc(), f.mode, 0)
+		if err != nil {
+			return err
+		}
+		f.File = newFile
+	}
 	resp.Data = make([]byte, req.Size)
-	if _, err := osFile.ReadAt(resp.Data, req.Offset); err != io.EOF {
+	if _, err := f.ReadAt(resp.Data, req.Offset); err != io.EOF {
 		return err
 	}
 
 	return nil
 }
 
-func (f *File) openForWrite() (*os.File, error){
-	if !f.writeable {
-		f.writeable = true
-		writeFile, err := os.Create(f.Loc())
-		if err != nil {
-			return nil, err
-		}
-
-		origFile, err := os.Open(f.fromPath)
-		if err != nil {
-			return nil, err
-		}
-		defer origFile.Close()
-
-		if _, err := io.Copy(origFile, writeFile); err != nil {
-			return nil, err
-		}
-		f.openFile = writeFile
-		return writeFile, nil
-	}
-	return f.openFile, nil
+func (f *FileHandle) Flush(ctx context.Context, req *fuse.FlushRequest) error {
+	// ignore the error as go will complain on multiple closes however FUSE allows this
+	f.Close()
+	return nil
 }
 
-func (f *File) Write(ctx context.Context, req *fuse.WriteRequest, resp *fuse.WriteResponse) error {
-	osFile, err := f.openForWrite()
+func (f *FileHandle) Write(ctx context.Context, req *fuse.WriteRequest, resp *fuse.WriteResponse) error {
+	n, err := f.WriteAt(req.Data, req.Offset)
 	if err != nil {
 		return err
 	}
-
-	n, err := osFile.WriteAt(req.Data, req.Offset)
 	resp.Size = n
-	f.attr.Size += uint64(n)
-	return err
-}
-
-func (f *File) Fsync(ctx context.Context, req *fuse.FsyncRequest) error {
-	return f.openFile.Sync()
-}
-
-func (f *File) Flush(ctx context.Context, req *fuse.FlushRequest) error {
-	if f.openFile == nil {
-		return nil
-	}
-
-	err := f.openFile.Close()
-	if err != nil {
-		return err
-	}
-	f.openFile = nil
+	f.file.attr.Size += uint64(n)
 	return nil
 }

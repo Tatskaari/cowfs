@@ -121,10 +121,13 @@ func (d *Dir) Create(ctx context.Context, req *fuse.CreateRequest, resp *fuse.Cr
 	if err != nil {
 		return nil, nil, err
 	}
-	child.openFile = f
 
 	d.entries[req.Name] = child
-	return child, child, nil
+	return child, &FileHandle{
+		File: f,
+		file: child,
+		wasWriteable: true,
+	}, nil
 }
 
 func (d *Dir) Mkdir(ctx context.Context, req *fuse.MkdirRequest) (fs.Node, error) {

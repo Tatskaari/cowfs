@@ -3,9 +3,11 @@ package fs
 import (
 	"bazil.org/fuse"
 	"bazil.org/fuse/fs"
+	"fmt"
 	"gopkg.in/op/go-logging.v1"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 var log = logging.MustGetLogger("moofs/fs")
@@ -40,7 +42,9 @@ func MountAndServe(mountPoint string, paths []string) {
 	mooFS.root = mooFS.fromPaths(paths)
 
 	fuse.Debug = func(msg interface{}) {
-		log.Infof("%v", msg)
+		if !strings.Contains(fmt.Sprint("%v", msg), "attr") {
+			log.Infof("%v", msg)
+		}
 	}
 
 	err = fs.Serve(c, mooFS)
