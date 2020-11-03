@@ -37,8 +37,11 @@ func MountAndServe(mountPoint string, paths []string) {
 	}
 	defer c.Close()
 
-	mooFS := &FS{mountPoint: mountPoint}
-	mooFS.root = mooFS.fromPaths(paths)
+	cowFS := &FS{mountPoint: mountPoint}
+	cowFS.root, err = cowFS.fromPaths(paths)
+	if err != nil {
+		log.Fatal(err)
+	}
 
 	fuse.Debug = func(msg interface{}) {
 		logLine := fmt.Sprintf("%v", msg)
@@ -47,7 +50,7 @@ func MountAndServe(mountPoint string, paths []string) {
 		}
 	}
 
-	err = fs.Serve(c, mooFS)
+	err = fs.Serve(c, cowFS)
 	if err != nil {
 		log.Fatal(err)
 	}

@@ -11,7 +11,7 @@ import (
 )
 
 //TODO this should probably use constructors and such. Raw struct init here is risky.
-func (mooFS *FS) fromPaths(paths []string) *Dir {
+func (mooFS *FS) fromPaths(paths []string) (*Dir, error) {
 	d := new(Dir)
 	d.path = ""
 	d.entries = make(map[string]fs.Node, len(paths))
@@ -21,29 +21,26 @@ func (mooFS *FS) fromPaths(paths []string) *Dir {
 	}
 
 	for _, p := range paths {
-		f := &File{
-			path:      filepath.Base(p),
-			fromPath:  p,
-			writeable: false,
-			mooFS: mooFS,
-		}
-		f.attr = new(fuse.Attr)
-		err := fileAttr(f, f.attr)
-		f.attr.Inode = fs.GenerateDynamicInode(d.attr.Inode, f.path)
+		fInfo, err := os.Lstat(p)
 		if err != nil {
-			panic(err)
+			return nil, err
 		}
-		d.entries[filepath.Base(p)] = f
+
+		file := mooFS.newFile(d, filepath.Base(p), uint64(fInfo.Size()), fInfo.Mode())
+		file.writeable = false
+		file.fromPath = p
+
+		d.entries[filepath.Base(p)] = file
 	}
 
-	return d
+	return d, nil
 }
 
 // Dir implements both Node and Handle for the root directory.
 type Dir struct{
-	mooFS *FS
-	attr *fuse.Attr
-	path string
+	mooFS   *FS
+	attr    *fuse.Attr
+	path    string
 	entries map[string]fs.Node
 }
 
@@ -55,7 +52,7 @@ func (mooFS *FS) newDir(parent *Dir, name string, mode os.FileMode) *Dir {
 			Mode: mode,
 		},
 		entries: map[string]fs.Node{},
-		mooFS: mooFS,
+		mooFS:   mooFS,
 	}
 }
 
@@ -85,7 +82,7 @@ func (d *Dir) ReadDirAll(ctx context.Context) ([]fuse.Dirent, error) {
 		case *File:
 			entries = append(entries, fuse.Dirent{
 				Type:  fuse.DT_File,
-				Inode: f.attr.Inode,
+				Inode: f.inode,
 				Name:  k,
 			})
 		case *Dir:
@@ -95,7 +92,7 @@ func (d *Dir) ReadDirAll(ctx context.Context) ([]fuse.Dirent, error) {
 				Name:  k,
 			})
 		default:
-			panic(fmt.Errorf("unhandled file type %v", f))
+			return nil, fmt.Errorf("unhandled file type %v", f)
 		}
 	}
 	return entries, nil
@@ -114,7 +111,7 @@ func (d *Dir) Remove(ctx context.Context, req *fuse.RemoveRequest) error {
 }
 
 func (d *Dir) Create(ctx context.Context, req *fuse.CreateRequest, resp *fuse.CreateResponse) (fs.Node, fs.Handle, error) {
-	child := d.mooFS.newFile(d, req.Name, req.Mode)
+	child := d.mooFS.newFile(d, req.Name, 0, req.Mode)
 	path := child.Loc()
 
 	f, err := os.OpenFile(path, int(req.Flags), req.Mode.Perm())
@@ -138,4 +135,9 @@ func (d *Dir) Mkdir(ctx context.Context, req *fuse.MkdirRequest) (fs.Node, error
 	child := d.mooFS.newDir(d, req.Name, req.Mode)
 	d.entries[req.Name] = child
 	return child, nil
+}
+
+func (d *Dir) Link(ctx context.Context, req *fuse.LinkRequest, old fs.Node) (fs.Node, error) {
+	d.entries[req.NewName] = old
+	return old, nil
 }
