@@ -17,7 +17,7 @@ type Locatable interface {
 func fileAttr(loc Locatable, a *fuse.Attr) error {
 	info, err := os.Lstat(loc.Loc())
 	if err != nil {
-		panic(fmt.Errorf("failed to get file info for %s: %w", loc.Loc(), err))
+		return fmt.Errorf("failed to get file info for %s: %w", loc.Loc(), err)
 	}
 	a.Mode = info.Mode()
 	a.Size = uint64(info.Size())
@@ -78,7 +78,7 @@ func (f *File) Attr(ctx context.Context, a *fuse.Attr) error {
 func (f *File) prepareForWrite() error {
 	// If we're not writable, copy the file to the tmp fs
 	if !f.writeable {
-		writeFile, err := os.Create(f.Loc())
+		writeFile, err := os.Create(filepath.Join(tmpDir, f.mooFS.mountPoint, f.path))
 		if err != nil {
 			return err
 		}

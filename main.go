@@ -35,7 +35,7 @@ func main() {
 		go handleSignals()
 		fs.MountAndServe(opts.Mount.Args.MountPoint, opts.Mount.Args.Files)
 	} else {
-		if err := fs.Unmount(opts.Mount.Args.MountPoint); err != nil {
+		if err := fs.Unmount(opts.Unmount.Args.MountPoint); err != nil {
 			fmt.Println("Failed to unmount fs ", err)
 		}
 	}

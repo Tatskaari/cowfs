@@ -4,15 +4,14 @@ import (
 	"bazil.org/fuse"
 	"bazil.org/fuse/fs"
 	"fmt"
-	"gopkg.in/op/go-logging.v1"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
 )
 
-var log = logging.MustGetLogger("moofs/fs")
 
-const tmpDir = "/tmp/moofs"
+const tmpDir = "/tmp/cowfs"
 
 // FS implements the hello world file system.
 type FS struct{
@@ -26,7 +25,7 @@ func (mooFS *FS) Root() (fs.Node, error) {
 
 func MountAndServe(mountPoint string, paths []string) {
 	_ = os.MkdirAll(mountPoint, 0755)
-	_ = os.MkdirAll(filepath.Join("/tmp/cowfs", mountPoint), 0755)
+	_ = os.MkdirAll(filepath.Join(tmpDir, mountPoint), 0755)
 
 	c, err := fuse.Mount(
 		mountPoint,
@@ -42,8 +41,9 @@ func MountAndServe(mountPoint string, paths []string) {
 	mooFS.root = mooFS.fromPaths(paths)
 
 	fuse.Debug = func(msg interface{}) {
-		if !strings.Contains(fmt.Sprint("%v", msg), "attr") {
-			log.Infof("%v", msg)
+		logLine := fmt.Sprintf("%v", msg)
+		if !strings.Contains(logLine, "attr") {
+			fmt.Println(logLine)
 		}
 	}
 
@@ -55,6 +55,6 @@ func MountAndServe(mountPoint string, paths []string) {
 
 func Unmount(mountPoint string) error {
 	err := fuse.Unmount(mountPoint)
-	_ = os.RemoveAll(filepath.Join("/tmp/cowfs", mountPoint))
+	_ = os.RemoveAll(filepath.Join(tmpDir, mountPoint))
 	return err
 }
