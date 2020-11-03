@@ -1,9 +1,9 @@
 # CowFS
 A pure go copy-on-write FUSE file system. The file mount can be initialised with files from the host
-file system. These files will appear as real files to the host and any reads will be directed to the
-host file system. Any writes to these files will cause a sideways copy to a temporary directory. 
+file system. These files will appear as if copied already inside the file mount. Any reads will be 
+directed to the host file system, however writes will cause a sideways copy to a temporary directory. 
 
-This can improve performance massively for access patterns that are mostly read only however writes
+This can improve performance massively for access patterns that are mostly read-only, however writes
 are still permitted on occasion. 
 
 # Origin
