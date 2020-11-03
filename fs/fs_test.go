@@ -74,5 +74,20 @@ func (s *mooFSSuite) TestEditSrcFile() {
 	s.Require().NoError(err)
 
 	s.Equal(append(comment, origContents...), cowFSContent)
+}
 
+func (s *mooFSSuite) TestMkdir() {
+	err := os.Mkdir(filepath.Join(mountDir, "bar"), os.ModeDir | 0775)
+	s.Require().NoError(err)
+
+	bar, err := os.Create(filepath.Join(mountDir, "bar", "bar.go"))
+	s.Require().NoError(err)
+
+	_, err = bar.Write([]byte("Testing"))
+	s.Require().NoError(err)
+
+	s.Require().NoError(bar.Close())
+
+	barContent, err := ioutil.ReadFile(filepath.Join(mountDir, "bar", "bar.go"))
+	s.Equal("Testing", string(barContent))
 }
